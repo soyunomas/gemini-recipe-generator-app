@@ -1,0 +1,1052 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Catálogo de Recetas Internacionales</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <style>
+        /* Estilos personalizados */
+        body {
+            padding-top: 1rem;
+            background-color: #f8f9fa; /* Un fondo suave */
+        }
+        #api-key-section {
+            transition: opacity 0.5s ease-out;
+        }
+        #loading-indicator,
+        #recipe-modal-loading-indicator {
+             display: none; /* Oculto por defecto */
+             text-align: center;
+             margin: 2rem 0;
+        }
+        .recipe-card {
+            transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out, background-color 0.3s ease, border-color 0.3s ease;
+            cursor: pointer; /* Indica que la card es interactiva */
+            border: 1px solid rgba(0,0,0,.175); /* Borde predeterminado */
+        }
+        .recipe-card:hover:not(.selected):not(.viewed) { /* Hover solo si no está seleccionada o vista */
+            transform: translateY(-5px);
+            box-shadow: 0 0.5rem 1rem rgba(0,0,0,.15)!important;
+        }
+        .recipe-card.viewed { /* Estado intermedio: Visto pero no seleccionado */
+             border: 1px solid #fd7e14; /* Borde naranja (Bootstrap warning) */
+             background-color: #fff8e1; /* Fondo amarillo pálido */
+        }
+        .recipe-card.selected { /* Estado final: Seleccionado para imprimir */
+             border: 2px solid var(--bs-success); /* Borde verde */
+             background-color: #e9f7ef; /* Fondo verde pálido */
+        }
+        .category-title {
+            border-bottom: 2px solid var(--bs-primary);
+            padding-bottom: 0.5rem;
+            margin-top: 2rem;
+            margin-bottom: 1.5rem;
+            color: var(--bs-primary);
+        }
+        /* Estilo para el icono de ayuda */
+        .api-key-help-link {
+            text-decoration: none;
+            margin-left: 0.5rem;
+            font-size: 1.1rem;
+            vertical-align: middle;
+        }
+        /* Asegurar que el botón no active el hover de la card completa */
+        .recipe-card .btn {
+            cursor: pointer;
+        }
+        /* Estilo checkbox */
+        .recipe-card .form-check-input {
+             cursor: pointer;
+        }
+         .recipe-card .form-check-input:disabled {
+             cursor: not-allowed;
+             opacity: 0.5;
+         }
+        /* Estilo para el botón de impresión */
+         #print-selection-btn {
+             display: none; /* Oculto hasta que haya selecciones */
+             margin-top: 2rem;
+         }
+         /* Estilo para imagen en modal */
+         .recipe-image-modal {
+            max-width: 100%;
+            height: auto;
+            max-height: 300px; /* Limitar altura en modal */
+            object-fit: cover;
+            border: 1px solid #dee2e6;
+            border-radius: .375rem;
+            margin-bottom: 1rem;
+         }
+         .recipe-photo-placeholder {
+            width: 100%;
+            height: 200px;
+            background-color: #f0f0f0;
+            border: 1px dashed #ccc;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #6c757d;
+            text-align: center;
+            font-size: 0.9rem;
+         }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <header class="text-center mb-4">
+            <h1><i class="bi bi-book"></i> Catálogo de Recetas</h1>
+            <p class="lead">Descubre y selecciona recetas internacionales fáciles y saludables.</p>
+        </header>
+
+        <main>
+            <!-- Sección para la API Key (se muestra si no está hardcodeada) -->
+            <section id="api-key-section" class="alert alert-warning p-3 mb-4 shadow-sm">
+                 <div class="mb-3">
+                    <label for="apiKeyInput" class="form-label fw-bold">Introduce tu API Key de Google Gemini</label>
+                    <a href="https://aistudio.google.com/app/apikey" target="_blank" class="api-key-help-link" title="Obtener API Key">
+                        <i class="bi bi-question-circle-fill"></i>
+                    </a>
+                    <div class="input-group">
+                        <input type="password" class="form-control" id="apiKeyInput" placeholder="Pega tu clave aquí...">
+                        <button class="btn btn-primary" type="button" id="saveApiKeyBtn">Guardar y Continuar</button>
+                    </div>
+                    <div class="form-text">Tu clave se usará para conectar con Gemini. No se compartirá.</div>
+                 </div>
+            </section>
+
+            <!-- Botón para cargar el catálogo (se habilita cuando la API Key está lista) -->
+            <section class="text-center mb-4">
+                <button class="btn btn-success btn-lg" id="loadCatalogBtn" disabled>
+                    <i class="bi bi-arrow-clockwise"></i> Cargar Nuevo Catálogo
+                </button>
+            </section>
+
+             <!-- Indicador de carga principal -->
+            <div id="loading-indicator">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Cargando...</span>
+                </div>
+                <p class="mt-2">Generando catálogo variado con Gemini...</p>
+            </div>
+
+            <!-- Área para mostrar mensajes al usuario -->
+            <div id="messages" class="mb-3"></div>
+
+            <!-- Área donde se mostrará el catálogo de recetas -->
+            <div id="recipe-catalog" class="mb-4">
+                <p class="text-muted text-center">Haz clic en "Cargar Nuevo Catálogo" para empezar.</p>
+            </div>
+
+            <!-- Botón para Imprimir Selección -->
+            <div class="text-center">
+                <button class="btn btn-info" id="print-selection-btn">
+                    <i class="bi bi-printer"></i> Preparar Impresión de Recetas Seleccionadas
+                </button>
+            </div>
+
+
+            <!-- Modal para mostrar la receta (usando Bootstrap Modal) -->
+            <div class="modal fade" id="recipeModal" tabindex="-1" aria-labelledby="recipeModalLabel" aria-hidden="true">
+              <div class="modal-dialog modal-lg modal-dialog-scrollable">
+                <div class="modal-content">
+                  <div class="modal-header">
+                    <h5 class="modal-title" id="recipeModalLabel">Receta</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                  </div>
+                  <div class="modal-body" id="recipeModalBody">
+                    <!-- Indicador de carga dentro del modal -->
+                     <div id="recipe-modal-loading-indicator" class="text-center">
+                        <div class="spinner-border text-secondary" role="status">
+                           <span class="visually-hidden">Cargando receta...</span>
+                        </div>
+                         <p class="mt-2">Consultando la receta e imagen con Gemini...</p>
+                    </div>
+                    <!-- La receta se cargará aquí (incluida imagen) -->
+                    <div id="recipe-content"></div>
+                  </div>
+                  <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+        </main>
+
+        <footer class="text-center text-muted mt-5 mb-3">
+            <small>Desarrollado con IA y <i class="bi bi-heart-fill text-danger"></i></small>
+        </footer>
+    </div>
+
+    <!-- Bootstrap JS Bundle (incluye Popper) -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+
+    <!-- Tu código JavaScript -->
+    <script>
+        // --- Configuración ---
+        let apiKey = ''; // <-- PON TU API KEY AQUÍ SI QUIERES HARCODEARLA
+        // Modelo de Gemini para texto
+        const TEXT_GEMINI_MODEL = "gemini-1.5-flash-latest"; // O "gemini-pro"
+        // Modelo de Gemini para imágenes (Experimental, puede funcionar con config adecuada)
+        const IMAGE_GEMINI_MODEL = "gemini-2.0-flash-exp-image-generation";
+        const GENERATE_IMAGES = true; // Poner a false para deshabilitar intento de generación de imágenes
+
+
+        const RECIPE_CATEGORIES = [
+            "Sopas y Cremas",
+            "Ensaladas",
+            "Verduras y Guarniciones",
+            "Pastas",
+            "Arroces",
+            "Pescados",
+            "Carnes"
+        ];
+
+        // --- Elementos del DOM ---
+        const apiKeySection = document.getElementById('api-key-section');
+        const apiKeyInput = document.getElementById('apiKeyInput');
+        const saveApiKeyBtn = document.getElementById('saveApiKeyBtn');
+        const loadCatalogBtn = document.getElementById('loadCatalogBtn');
+        const recipeCatalogDiv = document.getElementById('recipe-catalog');
+        const messagesDiv = document.getElementById('messages');
+        const loadingIndicator = document.getElementById('loading-indicator');
+        const printSelectionBtn = document.getElementById('print-selection-btn');
+
+        // Modal de Receta
+        const recipeModalElement = document.getElementById('recipeModal');
+        const recipeModalLabel = document.getElementById('recipeModalLabel');
+        const recipeModalBody = document.getElementById('recipeModalBody');
+        const recipeModalLoadingIndicator = document.getElementById('recipe-modal-loading-indicator');
+        const recipeContentDiv = document.getElementById('recipe-content');
+        const recipeModal = new bootstrap.Modal(recipeModalElement);
+
+        // --- Variables de Estado ---
+        let catalogData = {};
+        let cachedRecipes = {}; // { "Nombre Receta": { text: "html", imageUrl: "dataUrl|null|undefined" }, ... }
+        let selectedRecipesForPrint = new Set();
+        let viewedRecipes = new Set();
+        let generatedRecipeNames = new Set(); // Para almacenar nombres ya generados en esta sesión
+
+        // --- Funciones ---
+
+        /** Muestra mensajes al usuario */
+        function showMessage(message, type = 'info') {
+            const alertSelector = type === 'info' || type === 'warning' ? `.alert-${type}` : '.alert';
+            const existingAlerts = messagesDiv.querySelectorAll(alertSelector);
+            existingAlerts.forEach(alert => alert.remove());
+
+            const wrapper = document.createElement('div');
+            wrapper.innerHTML = `
+                <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+                    ${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            `;
+             if (type === 'danger' || type === 'success') {
+                 messagesDiv.prepend(wrapper);
+             } else {
+                 messagesDiv.append(wrapper);
+             }
+        }
+
+        /** Muestra/oculta el indicador de carga principal */
+        function toggleLoading(show, buttonToDisable = loadCatalogBtn) {
+            loadingIndicator.style.display = show ? 'block' : 'none';
+            if (buttonToDisable) {
+                buttonToDisable.disabled = show;
+                 const icon = buttonToDisable.querySelector('i');
+                 if (show) {
+                     buttonToDisable.dataset.originalText = buttonToDisable.textContent.trim();
+                     buttonToDisable.innerHTML = `<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Cargando...`;
+                 } else if (buttonToDisable.dataset.originalText) {
+                     // Restaurar texto e icono original
+                      const originalIconClass = icon?.className || 'bi bi-arrow-clockwise'; // Fallback icon
+                      const originalText = buttonToDisable.dataset.originalText.replace('Cargando...', '').trim();
+                      buttonToDisable.innerHTML = `<i class="${originalIconClass}"></i> ${originalText}`;
+                 }
+            }
+        }
+
+        /** Muestra/oculta el indicador de carga dentro del modal */
+        function toggleRecipeLoading(show) {
+            recipeModalLoadingIndicator.style.display = show ? 'block' : 'none';
+            recipeContentDiv.style.display = show ? 'none' : 'block';
+        }
+
+        /** Actualiza la visibilidad del botón de impresión */
+        function updatePrintButtonVisibility() {
+            printSelectionBtn.style.display = selectedRecipesForPrint.size > 0 ? 'inline-block' : 'none';
+        }
+
+        /** Inicializa la aplicación */
+        function initializeApp() {
+            const storedApiKey = localStorage.getItem('geminiApiKey');
+            if (storedApiKey && !apiKey) {
+                apiKey = storedApiKey;
+            }
+
+            if (!apiKey) {
+                apiKeySection.style.opacity = '1';
+                apiKeySection.style.display = 'block';
+                apiKeyInput.focus();
+            } else {
+                apiKeySection.style.display = 'none';
+                loadCatalogBtn.disabled = false;
+            }
+
+            saveApiKeyBtn.addEventListener('click', () => {
+                const inputKey = apiKeyInput.value.trim();
+                if (inputKey) {
+                    apiKey = inputKey;
+                    try {
+                       localStorage.setItem('geminiApiKey', apiKey);
+                    } catch (e) { console.warn("No se pudo guardar API Key en localStorage.", e); }
+                    apiKeySection.style.opacity = '0';
+                    setTimeout(() => { apiKeySection.style.display = 'none'; }, 500);
+                    loadCatalogBtn.disabled = false;
+                    showMessage("API Key guardada. ¡Carga el catálogo!", "success");
+                } else {
+                    showMessage("Por favor, introduce una API Key válida.", "warning");
+                    apiKeyInput.focus();
+                }
+            });
+
+            loadCatalogBtn.addEventListener('click', handleLoadCatalog);
+            recipeCatalogDiv.addEventListener('click', handleCatalogInteraction);
+            printSelectionBtn.addEventListener('click', prepareAndPrintSelection);
+
+            updatePrintButtonVisibility();
+        }
+
+
+        /** Maneja los clics dentro del catálogo (delegación de eventos) */
+        function handleCatalogInteraction(event) {
+            const target = event.target;
+            const recipeCard = target.closest('.recipe-card');
+            if (!recipeCard) return;
+
+            const recipeName = recipeCard.dataset.recipeName;
+            if (!recipeName) {
+                console.warn("Se hizo clic en una tarjeta sin nombre de receta definido.");
+                return;
+            }
+
+            if (target.type === 'checkbox' && target.classList.contains('recipe-select-checkbox') && !target.disabled) {
+                handleRecipeCheckboxChange(recipeName, target.checked, recipeCard);
+            }
+            else if (target.tagName === 'BUTTON' && target.classList.contains('view-recipe-btn')) {
+                fetchAndShowRecipeDetails(recipeName);
+            }
+            else if (!target.closest('.btn') && !target.closest('.form-check')) {
+                 fetchAndShowRecipeDetails(recipeName);
+            }
+        }
+
+
+        /** Maneja el cambio de estado del checkbox de una receta (solo si está habilitado) */
+        function handleRecipeCheckboxChange(recipeName, isChecked, cardElement) {
+            if (isChecked) {
+                selectedRecipesForPrint.add(recipeName);
+                cardElement.classList.remove('viewed');
+                cardElement.classList.add('selected');
+            } else {
+                selectedRecipesForPrint.delete(recipeName);
+                cardElement.classList.remove('selected');
+                if (viewedRecipes.has(recipeName)) {
+                    cardElement.classList.add('viewed');
+                }
+            }
+            console.log("Seleccionadas:", selectedRecipesForPrint);
+            updatePrintButtonVisibility();
+        }
+
+
+        /** Carga el catálogo inicial de recetas desde Gemini */
+        async function handleLoadCatalog() {
+            if (!apiKey) {
+                showMessage("Error: Falta la API Key de Gemini.", "danger");
+                apiKeySection.style.display = 'block';
+                apiKeySection.style.opacity = '1';
+                apiKeyInput.focus();
+                return;
+            }
+            console.log("Cargando nuevo catálogo variado...");
+            toggleLoading(true);
+            recipeCatalogDiv.innerHTML = '<p class="text-muted text-center">Generando nuevas recetas...</p>';
+            // No limpiar mensajes aquí
+            // Resetear datos y estados del catálogo anterior
+            catalogData = {};
+            cachedRecipes = {}; // Limpiar caché detallada al cargar nuevo catálogo
+            selectedRecipesForPrint.clear();
+            viewedRecipes.clear();
+            updatePrintButtonVisibility();
+            // NO LIMPIAR generatedRecipeNames aquí, queremos acumularlos
+
+            // --- CONSTRUIR PARTE DE EXCLUSIÓN DEL PROMPT ---
+             let exclusionPromptPart = '';
+             const EXCLUSION_LIMIT = 50; // Limitar número de recetas a excluir para no exceder tokens
+             if (generatedRecipeNames.size > 0) {
+                 // Tomar los últimos N nombres añadidos
+                 const namesToExclude = Array.from(generatedRecipeNames).slice(-EXCLUSION_LIMIT);
+                 if (namesToExclude.length > 0) {
+                      // Escapar nombres por si contienen caracteres problemáticos en el prompt
+                      const escapedNames = namesToExclude.map(name => name.replace(/"/g, '\\"')).join('", "');
+                      exclusionPromptPart = `\n\n**Instrucción Adicional IMPORTANTE:** Por favor, EVITA estrictamente generar los siguientes nombres de recetas que ya han aparecido en catálogos anteriores en esta sesión: ["${escapedNames}"]. Intenta ser lo más original posible dentro de los criterios dados y las categorías solicitadas.`;
+                      console.log(`[Prompt Exclusión] Añadiendo ${namesToExclude.length} nombres a excluir.`);
+                 }
+             }
+
+
+            // --- PROMPT PRINCIPAL (con parte de exclusión) ---
+            const randomSeed = Math.random().toString(16).substring(2, 10);
+            // *** PROMPT MODIFICADO PARA COCINA INTERNACIONAL ***
+            const prompt = `Necesito un catálogo NUEVO y VARIADO de nombres de recetas para una aplicación web.
+**Prioridad Alta: Genera un conjunto de recetas DIFERENTE al de solicitudes anteriores.** Evita repetir las mismas recetas comunes si es posible. Incorpora alguna idea menos frecuente pero igualmente apetecible.
+Las recetas deben ser de **cocina internacional variada** (ej. asiática, mexicana, italiana, india, francesa, etc.), fáciles de preparar y saludables.
+
+Genera el catálogo siguiendo estas especificaciones:
+
+1.  Una categoría especial llamada "Recetas Fáciles y Rápidas". Incluye exactamente 10 nombres de recetas variadas de cocina internacional (de cualquier tipo: sopas, carnes, ensaladas, etc.) que cumplan los criterios de ser muy fáciles y rápidas de hacer (ej. menos de 30 minutos). Asegura variedad dentro de esta categoría.
+2.  Para cada una de las siguientes categorías específicas, incluye exactamente 6 nombres de recetas distintas de cocina internacional que encajen en esa categoría y cumplan los criterios generales (internacional, fácil, saludable): ${RECIPE_CATEGORIES.join(', ')}. Intenta que no sean siempre las mismas recetas típicas para cada categoría.
+
+Formato de respuesta OBLIGATORIO: Un único objeto JSON válido. La clave principal debe ser "categorias".
+El valor de "categorias" debe ser un array de objetos.
+El PRIMER objeto del array debe representar la categoría especial "Recetas Fáciles y Rápidas" y contener 10 recetas en su array "recetas".
+Los SIGUIENTES objetos (${RECIPE_CATEGORIES.length} en total) deben representar las categorías específicas (${RECIPE_CATEGORIES.join(', ')}) y cada uno debe contener 6 recetas en su array "recetas".
+Cada objeto dentro del array "categorias" debe tener las claves "categoria" (string con el nombre exacto) y "recetas" (un array de objetos, donde cada objeto tiene solo una clave "nombre" con el nombre de la receta como string).
+
+Ejemplo PARCIAL de la estructura JSON esperada (solo como guía de formato, no copies las recetas):
+{
+  "categorias": [
+    {
+      "categoria": "Recetas Fáciles y Rápidas",
+      "recetas": [
+        {"nombre": "Ejemplo Internacional Rápido 1"},
+        {"nombre": "Ejemplo Internacional Rápido 2"},
+        // ... 8 más, diferentes entre sí
+      ]
+    },
+    {
+      "categoria": "Sopas y Cremas",
+      "recetas": [
+        {"nombre": "Ejemplo Sopa/Crema Internacional 1 (No la típica)"},
+        {"nombre": "Ejemplo Sopa/Crema Internacional 2"},
+         // ... 4 más, variadas
+      ]
+    },
+    // ... resto de categorías ...
+  ]
+}
+
+Asegúrate de que la respuesta sea únicamente el objeto JSON válido, sin texto introductorio, comentarios, explicaciones adicionales, ni marcas de código como \`\`\`json o \`\`\` fuera del JSON.
+(Pista para la IA: usa esta semilla para diversificar: ${randomSeed})${exclusionPromptPart}`; // Añadir la parte de exclusión
+
+            try {
+                const generationConfig = {
+                    temperature: 0.8, // Aumentar creatividad/variabilidad
+                };
+
+                const responseText = await callGeminiAPI(TEXT_GEMINI_MODEL, prompt, generationConfig);
+                const parsedJson = parseGeminiResponseToJson(responseText);
+
+                if (parsedJson && parsedJson.categorias && Array.isArray(parsedJson.categorias)) {
+                    // --- ACTUALIZAR SET DE NOMBRES GENERADOS ---
+                     let countAdded = 0;
+                     parsedJson.categorias.forEach(category => {
+                         if (category.recetas && Array.isArray(category.recetas)) {
+                             category.recetas.forEach(recipe => {
+                                 if (recipe.nombre) {
+                                     if (!generatedRecipeNames.has(recipe.nombre)) {
+                                         generatedRecipeNames.add(recipe.nombre);
+                                         countAdded++;
+                                     }
+                                 }
+                             });
+                         }
+                     });
+                     console.log(`[Nombres Generados] Añadidos ${countAdded} nuevos nombres. Total acumulado: ${generatedRecipeNames.size}`);
+
+                    catalogData = parsedJson.categorias;
+                    displayCatalog(catalogData); // Mostrar el nuevo catálogo
+                    showMessage("Nuevo catálogo internacional cargado.", "success"); // Mensaje actualizado
+                } else {
+                    console.error("Respuesta JSON inesperada o mal formada:", responseText);
+                    throw new Error("La respuesta de la API no tiene el formato JSON esperado ('categorias' array). Revisa la consola.");
+                }
+
+            } catch (error) {
+                console.error("Error al cargar el catálogo:", error);
+                showMessage(`Error al cargar el nuevo catálogo: ${error.message}. Revisa la consola.`, "danger");
+                recipeCatalogDiv.innerHTML = '<p class="text-danger text-center">No se pudo cargar el catálogo. Inténtalo de nuevo.</p>';
+            } finally {
+                toggleLoading(false); // Volver a habilitar el botón
+            }
+        }
+
+
+        /** Muestra el catálogo de recetas en el DOM */
+        function displayCatalog(categories) {
+            recipeCatalogDiv.innerHTML = '';
+
+            if (!categories || categories.length === 0) {
+                recipeCatalogDiv.innerHTML = '<p class="text-warning text-center">No se recibieron recetas para mostrar.</p>';
+                return;
+            }
+
+            categories.forEach(category => {
+                const categorySection = document.createElement('section');
+                categorySection.className = 'mb-4';
+                categorySection.innerHTML = `<h2 class="category-title">${escapeHtml(category.categoria)}</h2>`;
+
+                const cardsContainer = document.createElement('div');
+                const isFastCategory = category.categoria === "Recetas Fáciles y Rápidas";
+                cardsContainer.className = `row row-cols-1 row-cols-md-2 ${isFastCategory ? 'row-cols-lg-4' : 'row-cols-lg-3'} g-4`;
+
+
+                if (category.recetas && category.recetas.length > 0) {
+                    category.recetas.forEach(recipe => {
+                        const recipeName = recipe.nombre;
+                        if (!recipeName) {
+                            console.warn("Se encontró una receta sin nombre en la categoría:", category.categoria);
+                            return;
+                        }
+                        const isSelected = false; // Nuevo catálogo, nada seleccionado
+                        const isViewed = false;   // Nuevo catálogo, nada visto
+                        const cardStateClass = '';
+                        const checkboxId = `check-${recipeName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Math.random().toString(16).substring(2, 8)}`;
+
+                        const cardCol = document.createElement('div');
+                        cardCol.className = 'col';
+                        cardCol.innerHTML = `
+                            <div class="card h-100 recipe-card shadow-sm ${cardStateClass}" data-recipe-name="${escapeHtml(recipeName)}">
+                                <div class="card-body d-flex flex-column">
+                                    <h5 class="card-title flex-grow-1">${escapeHtml(recipeName)}</h5>
+                                    <div class="d-flex justify-content-between align-items-center mt-3">
+                                         <div class="form-check">
+                                            <input class="form-check-input recipe-select-checkbox" type="checkbox" value="" id="${checkboxId}"
+                                                ${isSelected ? 'checked' : ''}
+                                                disabled
+                                                title="Ve la receta para poder seleccionar">
+                                            <label class="form-check-label small" for="${checkboxId}">
+                                                Seleccionar
+                                            </label>
+                                        </div>
+                                        <button class="btn btn-sm btn-outline-primary view-recipe-btn">
+                                            <i class="bi bi-eye"></i> Ver
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                        cardsContainer.appendChild(cardCol);
+                    });
+                } else {
+                    cardsContainer.innerHTML = '<p class="text-muted">No hay recetas en esta categoría.</p>';
+                }
+
+                categorySection.appendChild(cardsContainer);
+                recipeCatalogDiv.appendChild(categorySection);
+            });
+        }
+
+        /** Busca (o recupera de caché) y muestra los detalles de una receta + imagen */
+        async function fetchAndShowRecipeDetails(recipeName) {
+            console.log(`Intentando mostrar detalles para: ${recipeName}`);
+            recipeModalLabel.textContent = `Receta: ${escapeHtml(recipeName)}`;
+            recipeContentDiv.innerHTML = '';
+            toggleRecipeLoading(true);
+             if (!recipeModalElement.classList.contains('show')) {
+                 recipeModal.show();
+             }
+
+            if (!apiKey) {
+                showMessage("Error: Falta la API Key de Gemini.", "danger");
+                toggleRecipeLoading(false);
+                recipeContentDiv.innerHTML = '<p class="text-danger">Error: API Key no configurada.</p>';
+                 if (recipeModalElement.classList.contains('show')) {
+                     recipeModal.hide();
+                 }
+                return;
+            }
+
+             let recipeDataFromCache = cachedRecipes[recipeName];
+             let needsTextFetch = !recipeDataFromCache || recipeDataFromCache.text === undefined;
+             let needsImageFetch = GENERATE_IMAGES && (!recipeDataFromCache || recipeDataFromCache.imageUrl === undefined);
+
+             if (!needsTextFetch && (!GENERATE_IMAGES || recipeDataFromCache.imageUrl !== undefined)) {
+                  console.log(`Receta "${recipeName}" encontrada completa en caché.`);
+                  updateCardAndDisplayModal(recipeName, recipeDataFromCache);
+                  return;
+             }
+
+            console.log(`Receta "${recipeName}" incompleta en caché. Llamando API(s)...`);
+
+            let recipeHtml = recipeDataFromCache?.text;
+            let imageUrl = recipeDataFromCache?.imageUrl;
+
+            try {
+                if (needsTextFetch) {
+                    // *** PROMPT MODIFICADO PARA INGREDIENTES CLAVE ***
+                    const textPrompt = `Proporciona una receta de cocina detallada, fácil de seguir y saludable para preparar "${recipeName}". Incluye: Breve descripción, Tiempo estimado, Porciones, Línea "**Ingredientes Clave:**" destacando 3-5 ingredientes principales de la receta (ej: Pollo, Pimientos, Cebolla), Lista detallada de ingredientes (cantidades, usar viñetas o numeración), Instrucciones paso a paso numeradas, y Opcional: consejos/variaciones. Formato: Markdown básico (## título, *, 1., **negrita**). Sin JSON ni texto extra.`;
+                    const recipeText = await callGeminiAPI(TEXT_GEMINI_MODEL, textPrompt);
+                    recipeHtml = formatRecipeText(recipeText);
+                    cachedRecipes[recipeName] = { ...cachedRecipes[recipeName], text: recipeHtml };
+                    console.log(`Texto de receta "${recipeName}" obtenido y cacheado.`);
+                } else {
+                    console.log(`Texto de receta "${recipeName}" recuperado de caché.`);
+                }
+
+                if (needsImageFetch) {
+                     console.log(`Generando imagen para "${recipeName}"...`);
+                     const imagePrompt = `Fotografía realista y apetitosa: ${recipeName}. Estilo culinario profesional, buena luz, fondo neutro.`;
+                     try {
+                         imageUrl = await callImageGenerationAPI(IMAGE_GEMINI_MODEL, imagePrompt);
+                         cachedRecipes[recipeName] = { ...cachedRecipes[recipeName], imageUrl: imageUrl };
+                          if(imageUrl) {
+                              console.log(`[DEBUG IMAGE] Imagen obtenida para "${recipeName}".`);
+                          } else {
+                              console.warn(`[DEBUG IMAGE] No se obtuvo imagen para "${recipeName}". Cacheado null.`);
+                          }
+                     } catch (imgError) {
+                         console.error(`[DEBUG IMAGE] Error generando imagen para "${recipeName}":`, imgError);
+                         cachedRecipes[recipeName] = { ...cachedRecipes[recipeName], imageUrl: null };
+                         imageUrl = null;
+                     }
+                 } else if (GENERATE_IMAGES && imageUrl !== undefined) {
+                      console.log(`Estado de imagen para "${recipeName}" recuperado de caché.`);
+                 } else if (!GENERATE_IMAGES) {
+                     console.log(`Generación de imágenes deshabilitada.`);
+                     if (cachedRecipes[recipeName]?.imageUrl === undefined) {
+                         cachedRecipes[recipeName] = { ...cachedRecipes[recipeName], imageUrl: null };
+                         imageUrl = null;
+                     }
+                 }
+
+                 updateCardAndDisplayModal(recipeName, cachedRecipes[recipeName]);
+
+             } catch (error) {
+                  console.error(`Error procesando receta "${recipeName}":`, error);
+                  toggleRecipeLoading(false);
+                  recipeContentDiv.innerHTML = `<p class="text-danger">Error al cargar receta: ${escapeHtml(error.message)}</p>`;
+             }
+        }
+
+        /** Actualiza la tarjeta en el catálogo y muestra el contenido en el modal */
+        function updateCardAndDisplayModal(recipeName, recipeData) {
+            viewedRecipes.add(recipeName);
+
+            const cardElement = recipeCatalogDiv.querySelector(`.recipe-card[data-recipe-name="${CSS.escape(recipeName)}"]`);
+             if (cardElement) {
+                 if (!cardElement.classList.contains('selected')) {
+                     cardElement.classList.add('viewed');
+                 }
+                 const checkbox = cardElement.querySelector('.recipe-select-checkbox');
+                 if (checkbox) {
+                     checkbox.disabled = false;
+                     checkbox.title = 'Seleccionar para imprimir';
+                 }
+             } else {
+                console.warn(`No se encontró Card para actualizar: ${recipeName}`);
+             }
+             displayRecipeDetails(recipeName, recipeData);
+        }
+
+
+        /** Muestra los detalles de la receta (texto e imagen) en el modal */
+        function displayRecipeDetails(recipeName, recipeData) {
+             recipeModalLabel.textContent = `Receta: ${escapeHtml(recipeName)}`;
+             let modalContentHtml = '';
+
+             if (GENERATE_IMAGES) {
+                 if (typeof recipeData?.imageUrl === 'string' && recipeData.imageUrl.startsWith('data:image')) {
+                     modalContentHtml += `<img src="${recipeData.imageUrl}" alt="Imagen generada de ${escapeHtml(recipeName)}" class="recipe-image-modal img-fluid d-block mx-auto">`;
+                 } else {
+                      const placeholderText = recipeData?.imageUrl === null ? 'Imagen no disponible' : 'Generación de imagen no habilitada o pendiente';
+                      modalContentHtml += `<div class="recipe-photo-placeholder d-flex align-items-center justify-content-center mb-3"><span>${placeholderText}</span></div>`;
+                 }
+             }
+
+             if (recipeData?.text) {
+                 modalContentHtml += `<div class="recipe-text-content">${recipeData.text}</div>`;
+             } else {
+                 modalContentHtml += '<p><em>Cargando texto de la receta...</em></p>';
+             }
+
+             recipeContentDiv.innerHTML = modalContentHtml;
+             toggleRecipeLoading(false);
+        }
+
+
+         /** Llama a la API de Google Gemini (para Texto) */
+         async function callGeminiAPI(modelName, promptText, generationConfig = {}) {
+             const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+
+             const requestBody = {
+                 contents: [{ parts: [{ text: promptText }] }],
+                 safetySettings: [
+                   { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+                   { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+                   { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+                   { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+                 ],
+                 generationConfig: { ...generationConfig }
+             };
+
+             try {
+                 console.log(`[API Call - Text] Enviando prompt a ${modelName} (Temp: ${generationConfig.temperature || 'default'})...`);
+                 const response = await fetch(API_URL, {
+                     method: 'POST',
+                     headers: { 'Content-Type': 'application/json' },
+                     body: JSON.stringify(requestBody),
+                 });
+
+                 const responseData = await response.json();
+                 console.log(`[API Call - Text] Respuesta recibida de ${modelName}. Status: ${response.status}`);
+
+                 if (!response.ok) {
+                     console.error(`[API Call - Text] Error API (${modelName}): Status ${response.status}`, responseData);
+                     const errorMessage = responseData?.error?.message || `HTTP error! status: ${response.status}`;
+                     throw new Error(`Error de API (${modelName}): ${errorMessage}`);
+                 }
+
+                 if (responseData.promptFeedback && responseData.promptFeedback.blockReason) {
+                     console.error(`[API Call - Text] Prompt bloqueado (${modelName}): ${responseData.promptFeedback.blockReason}`);
+                     let userMessage = `Prompt (${modelName}) bloqueado: ${responseData.promptFeedback.blockReason}.`;
+                      if (responseData.promptFeedback.safetyRatings) {
+                         userMessage += ` Categorías: ${responseData.promptFeedback.safetyRatings.map(r => r.category).join(', ')}`;
+                     }
+                     throw new Error(userMessage);
+                 }
+
+                if (responseData.candidates && responseData.candidates[0]) {
+                     const candidate = responseData.candidates[0];
+                     const finishReason = candidate.finishReason;
+
+                     if (finishReason && finishReason !== "STOP" && finishReason !== "MAX_TOKENS") {
+                          console.warn(`[API Call - Text] Gemini (${modelName}) terminó: ${finishReason}.`);
+                          if (finishReason === "SAFETY") {
+                            let safetyMessage = `Respuesta bloqueada (${modelName}) por seguridad.`;
+                            if(candidate.safetyRatings) {
+                                safetyMessage += ` Categorías: ${candidate.safetyRatings.filter(r => r.blocked).map(r => r.category).join(', ')}`;
+                            }
+                            throw new Error(safetyMessage);
+                          } else if (finishReason === "RECITATION") {
+                               throw new Error(`Respuesta bloqueada (${modelName}) por recitación.`);
+                          } else {
+                               throw new Error(`Respuesta incompleta (${modelName}), razón: ${finishReason}.`);
+                          }
+                     }
+                     if (finishReason === "MAX_TOKENS") {
+                         console.warn(`[API Call - Text] Respuesta (${modelName}) incompleta (límite tokens).`);
+                     }
+
+                    if (candidate.content && candidate.content.parts && candidate.content.parts[0]?.text) {
+                         console.log(`[API Call - Text] Texto recibido de ${modelName}`);
+                         return candidate.content.parts[0].text;
+                     } else {
+                         console.error(`[API Call - Text] Candidato sin texto (${modelName}).`, candidate);
+                         throw new Error(`Respuesta (${modelName}) sin contenido de texto.`);
+                     }
+
+                } else {
+                     console.error(`[API Call - Text] Sin candidatos válidos (${modelName}).`, responseData);
+                     throw new Error(`Formato respuesta inesperado (${modelName}): sin candidatos.`);
+                }
+
+             } catch (error) {
+                 console.error(`[API Call - Text] Error en callGeminiAPI (${modelName}):`, error);
+                 throw error;
+             }
+         }
+
+        /** Llama a la API de generación de imágenes (Adaptado con responseModalities) */
+        async function callImageGenerationAPI(modelName, promptText) {
+             const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+
+             const requestBody = {
+                 contents: [{ parts: [{ text: promptText }] }],
+                 generationConfig: {
+                     responseModalities: ["Image", "Text"]
+                 },
+                 safetySettings: [
+                   { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+                   { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+                   { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+                   { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+                 ],
+             };
+
+             console.log(`[API Call - Image] Llamando a ${modelName}...`);
+
+             try {
+                 const response = await fetch(API_URL, {
+                     method: 'POST',
+                     headers: { 'Content-Type': 'application/json' },
+                     body: JSON.stringify(requestBody),
+                 });
+
+                 const responseData = await response.json();
+                 console.log(`[API Call - Image] Respuesta RAW ${modelName}. Status: ${response.status}`);
+
+                 if (!response.ok) {
+                     console.error(`[API Call - Image] Error API (${modelName}): Status ${response.status}`, responseData);
+                     return null;
+                 }
+
+                 if (responseData.promptFeedback && responseData.promptFeedback.blockReason) {
+                     console.error(`[API Call - Image] Prompt bloqueado (${modelName}): ${responseData.promptFeedback.blockReason}`);
+                     return null;
+                 }
+
+                 if (responseData.candidates && responseData.candidates.length > 0) {
+                     for (const candidate of responseData.candidates) {
+                          if (candidate.finishReason === "SAFETY") {
+                              console.warn(`[API Call - Image] Candidato bloqueado seguridad (${modelName}).`);
+                              continue;
+                          }
+                         if (candidate.content?.parts?.length > 0) {
+                             const imagePart = candidate.content.parts.find(part => part.inlineData?.mimeType && part.inlineData?.data);
+                             if (imagePart) {
+                                 console.log(`[API Call - Image] inlineData encontrado: ${imagePart.inlineData.mimeType}`);
+                                 const dataUrl = `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}`;
+                                 return dataUrl;
+                             }
+                         }
+                     }
+                 }
+
+                 console.warn(`[API Call - Image] No se encontró 'inlineData' válida en ${modelName}. Respuesta:`, responseData);
+                 return null;
+
+             } catch (error) {
+                 console.error(`[API Call - Image] Error durante llamada ${modelName}:`, error);
+                 return null;
+             }
+        }
+
+
+        /** Intenta parsear la respuesta JSON de Gemini */
+        function parseGeminiResponseToJson(responseText) {
+            if (!responseText || typeof responseText !== 'string') {
+                 console.error("Intento parsear respuesta no válida.");
+                 throw new Error("Respuesta inválida de API.");
+            }
+            let jsonString = responseText.trim();
+
+            jsonString = jsonString.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+            jsonString = jsonString.replace(/^```\s*/, '').replace(/\s*```$/, '');
+
+            try {
+                const parsed = JSON.parse(jsonString);
+                if (typeof parsed === 'object' && parsed !== null) {
+                    return parsed;
+                } else {
+                    console.error("JSON parseado no es objeto:", parsed);
+                    throw new Error("Contenido JSON no es objeto.");
+                }
+            } catch (error) {
+                 console.error("Error parseando JSON:", error);
+                 console.error("Texto fallido:", responseText);
+                 throw new Error(`No se pudo interpretar respuesta como JSON. (${error.message})`);
+            }
+        }
+
+        /** Formatea texto con Markdown básico a HTML */
+        function formatRecipeText(text) {
+             if (!text) return '';
+
+            let rawHtml = text.replace(/\r\n/g, '\n');
+
+            // Convertir **negrita** y *cursiva* o _cursiva_ (sin interferir con markdown de listas)
+            rawHtml = rawHtml.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+            rawHtml = rawHtml.replace(/(?<!\*)\*(?!\*)([^*]+)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
+            rawHtml = rawHtml.replace(/(?<!_)_(?!_)([^_]+)(?<!_)_(?!_)/g, '<em>$1</em>');
+
+            // Convertir # título y ## título (Markdown) a h4 y h5 (HTML)
+            rawHtml = rawHtml.replace(/^## (.*$)/gim, '<h5>$1</h5>');
+            rawHtml = rawHtml.replace(/^# (.*$)/gim, '<h4>$1</h4>');
+
+            // Convertir listas numeradas y con viñetas (maneja saltos de línea indentados dentro del item)
+            rawHtml = rawHtml.replace(/^(\d+)\. (.*(?:\n {2,}.*)*)/gm, (match, num, item) => `<tmp_num_li>${item.replace(/\n {2,}/g,'\n')}</tmp_num_li>`);
+            rawHtml = rawHtml.replace(/^[\*\-] (.*(?:\n {2,}.*)*)/gm, (match, item) => `<tmp_bull_li>${item.replace(/\n {2,}/g,'\n')}</tmp_bull_li>`);
+
+            // Agrupar items de lista temporales en <ol> y <ul>
+            rawHtml = rawHtml.replace(/(<tmp_num_li>.*<\/tmp_num_li>\s*)+/g, match => `<ol>${match.replace(/<tmp_num_li>(.*?)<\/tmp_num_li>/gs, '<li>$1</li>')}</ol>`);
+            rawHtml = rawHtml.replace(/(<tmp_bull_li>.*<\/tmp_bull_li>\s*)+/g, match => `<ul>${match.replace(/<tmp_bull_li>(.*?)<\/tmp_bull_li>/gs, '<li>$1</li>')}</ul>`);
+
+            // Limpieza final y conversión de párrafos (asegura escape de HTML y manejo de saltos de línea)
+            let finalHtml = '';
+            const blocks = rawHtml.split(/(<(?:h[45]|ul|ol)>.*?<\/(?:h[45]|ul|ol)>)/gs);
+
+            blocks.forEach(block => {
+                if (!block) return;
+                // Procesar bloques de listas o títulos (que ya tienen estructura HTML)
+                if (block.match(/^<(h[45]|ul|ol)>/)) {
+                     // Limpiar párrafos dentro de <li> si los hubiera
+                     block = block.replace(/<li>\s*<p>(.*?)<\/p>\s*<\/li>/gs, '<li>$1</li>');
+                     // Escapar contenido dentro de <li> y convertir saltos de línea internos
+                     block = block.replace(/<li>(.*?)<\/li>/gs, (m, content) => {
+                         let safeContent = escapeHtml(content.trim())
+                                            .replace(/&lt;strong&gt;/g, '<strong>').replace(/&lt;\/strong&gt;/g, '</strong>')
+                                            .replace(/&lt;em&gt;/g, '<em>').replace(/&lt;\/em&gt;/g, '</em>');
+                         return `<li>${safeContent.replace(/\n/g, '<br>')}</li>`;
+                     });
+                     // Escapar contenido dentro de <h4>/<h5>
+                     block = block.replace(/<(h[45])>(.*?)<\/\1>/gs, (m, tag, content) => {
+                         let safeContent = escapeHtml(content.trim())
+                                            .replace(/&lt;strong&gt;/g, '<strong>').replace(/&lt;\/strong&gt;/g, '</strong>')
+                                            .replace(/&lt;em&gt;/g, '<em>').replace(/&lt;\/em&gt;/g, '</em>');
+                         return `<${tag}>${safeContent}</${tag}>`;
+                     });
+                     finalHtml += block;
+                } else {
+                    // Procesar bloques de texto simple como párrafos
+                    let paragraphs = block.trim().split(/\n{2,}/); // Dividir por doble salto de línea
+                    paragraphs.forEach(p => {
+                        if (p.trim()) {
+                            // Escapar, restaurar negrita/cursiva escapadas y convertir saltos de línea
+                            let safeP = escapeHtml(p.trim())
+                                            .replace(/&lt;strong&gt;/g, '<strong>').replace(/&lt;\/strong&gt;/g, '</strong>')
+                                            .replace(/&lt;em&gt;/g, '<em>').replace(/&lt;\/em&gt;/g, '</em>');
+                            safeP = safeP.replace(/\n/g, '<br>'); // Convertir saltos de línea simples a <br>
+                            finalHtml += `<p>${safeP}</p>\n`;
+                        }
+                    });
+                }
+            });
+
+            // Eliminar párrafos vacíos que puedan quedar
+            finalHtml = finalHtml.replace(/<p>\s*<\/p>/g, '');
+
+            return finalHtml.trim();
+        }
+
+
+        /** Escapa caracteres HTML para prevenir XSS */
+        function escapeHtml(unsafe) {
+            if (typeof unsafe !== 'string') {
+                 console.warn("escapeHtml recibió no-string:", unsafe);
+                 return "";
+            }
+            return unsafe
+                 .replace(/&/g, "&amp;")
+                 .replace(/</g, "&lt;")
+                 .replace(/>/g, "&gt;")
+                 .replace(/"/g, "&quot;")
+                 .replace(/'/g, "&#039;");
+        }
+
+
+        /** Prepara e intenta imprimir las recetas seleccionadas */
+        function prepareAndPrintSelection() {
+
+            let printContent = `
+                <html>
+                <head>
+                    <title>Mis Recetas Seleccionadas</title>
+                    <link rel="preconnect" href="https://fonts.googleapis.com">
+                    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+                    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+                    <style>
+                        @page { size: A4; margin: 1.5cm; }
+                        body { font-family: 'Roboto', sans-serif; font-size: 10pt; line-height: 1.4; color: #333; }
+                        .recipe-card-print { border: 1px solid #ccc; padding: 0.8cm; margin-bottom: 1.5cm; page-break-inside: avoid; box-shadow: 2px 2px 5px rgba(0,0,0,0.1); background-color: #fff; }
+                        .recipe-image-print { max-width: 100%; height: 150px; object-fit: cover; border: 1px solid #eee; margin-bottom: 0.8cm; display: block; background-color: #f8f9fa; }
+                        .recipe-placeholder-print { width: 100%; height: 150px; background-color: #e9ecef; border: 1px dashed #adb5bd; margin-bottom: 0.8cm; display: flex; align-items: center; justify-content: center; color: #6c757d; font-size: 10pt; text-align: center; }
+                        .recipe-title-print { font-size: 1.4rem; font-weight: bold; color: #0a58ca; margin-bottom: 0.6em; border-bottom: 1px solid #dee2e6; padding-bottom: 0.4em; }
+                        .recipe-content-print { }
+                        .recipe-content-print h4, .recipe-content-print h5 { font-size: 1.15rem; font-weight: bold; color: #343a40; margin-top: 1.2em; margin-bottom: 0.5em; }
+                        .recipe-content-print ul, .recipe-content-print ol { padding-left: 2em; margin-bottom: 1em; }
+                        .recipe-content-print li { margin-bottom: 0.3em; }
+                        .recipe-content-print p { margin-bottom: 0.8em; }
+                        .recipe-content-print strong { font-weight: bold; color: #212529; }
+                        .recipe-content-print em { font-style: italic; }
+                        /* .page-title-print { ... } se eliminó */
+                        @media print { body { box-shadow: none; } .recipe-card-print { box-shadow: none; border: 1px solid #ddd; } p, h4, h5, li { orphans: 3; widows: 3; } h3.recipe-title-print { page-break-after: avoid; } h4, h5 { page-break-before: avoid; page-break-after: avoid; } ul, ol { page-break-before: avoid; } }
+                    </style>
+                </head>
+                <body>
+                    <!-- La línea con <h1 class="page-title-print"> se ha eliminado -->
+            `;
+
+            let missingRecipes = [];
+            let recipeCount = 0;
+            selectedRecipesForPrint.forEach(recipeName => {
+                const recipeData = cachedRecipes[recipeName];
+                const canPrintText = recipeData?.text;
+                const canPrintImageState = !GENERATE_IMAGES || recipeData?.imageUrl !== undefined;
+
+                if (canPrintText && canPrintImageState) {
+                    recipeCount++;
+                    printContent += `<article class="recipe-card-print">`;
+
+                    if (GENERATE_IMAGES) {
+                        if (typeof recipeData.imageUrl === 'string' && recipeData.imageUrl.startsWith('data:image')) {
+                            printContent += `<img src="${recipeData.imageUrl}" alt="${escapeHtml(recipeName)}" class="recipe-image-print">`;
+                        } else {
+                            printContent += `<div class="recipe-placeholder-print"><span>Imagen no disponible</span></div>`;
+                        }
+                    }
+
+                    printContent += `
+                            <h3 class="recipe-title-print">${escapeHtml(recipeName)}</h3>
+                            <div class="recipe-content-print">
+                                ${recipeData.text}
+                            </div>
+                        </article>
+                    `;
+                } else {
+                    console.warn(`Intento imprimir receta '${recipeName}' sin datos completos.`, recipeData);
+                    missingRecipes.push(recipeName);
+                }
+            });
+
+            printContent += `
+                </body>
+                </html>`;
+
+            if (missingRecipes.length > 0) {
+                 showMessage(`Atención: No se incluyeron recetas por falta de detalles: ${missingRecipes.map(escapeHtml).join(', ')}.`, "warning");
+            }
+
+            if (recipeCount > 0) {
+                 const printWindow = window.open('', '_blank', 'width=1000,height=800,scrollbars=yes,resizable=yes');
+                 if (printWindow) {
+                     printWindow.document.open();
+                     printWindow.document.write(printContent);
+                     printWindow.document.close();
+                     printWindow.onload = function() {
+                         setTimeout(() => {
+                             try {
+                                 printWindow.focus();
+                                 printWindow.print();
+                             } catch (e) {
+                                 console.error("Error al imprimir:", e);
+                                 showMessage("Error al abrir diálogo de impresión.", "danger");
+                             }
+                         }, 1200);
+                     };
+                 } else {
+                     showMessage("No se pudo abrir ventana de impresión. Revisa bloqueador de pop-ups.", "danger");
+                 }
+            } else if (selectedRecipesForPrint.size > 0 && missingRecipes.length === selectedRecipesForPrint.size) {
+                 showMessage("Error: Ninguna receta seleccionada pudo prepararse para imprimir.", "danger");
+            } else if (selectedRecipesForPrint.size === 0) {
+                 showMessage("No has seleccionado recetas para imprimir.", "info");
+            }
+        }
+
+
+        // --- Inicialización ---
+        document.addEventListener('DOMContentLoaded', initializeApp);
+
+    </script>
+
+</body>
+</html>
